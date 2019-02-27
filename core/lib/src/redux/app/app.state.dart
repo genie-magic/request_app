@@ -1,17 +1,21 @@
 import 'package:core/src/redux/user/user.state.dart';
+import 'package:core/src/redux/record_request/record_request.state.dart';
 import 'package:meta/meta.dart';
 
 @immutable
 class AppState {
   AppState({
-    @required this.userState
+    @required this.userState,
+    @required this.recordRequestState
   });
 
   final UserState userState;
+  final RecordRequestState recordRequestState;
 
   factory AppState.initial() {
     return AppState(
-      userState: UserState.initial()
+      userState: UserState.initial(),
+      recordRequestState: RecordRequestState.initial()
     );
   }
 
@@ -19,7 +23,8 @@ class AppState {
     AppState userState
   }) {
     return AppState(
-      userState: userState ?? this.userState
+      userState: userState ?? this.userState,
+      recordRequestState: recordRequestState ?? this.recordRequestState
     );
   }
 
@@ -28,10 +33,12 @@ class AppState {
     return identical(this, other) ||
       other is AppState &&
         runtimeType == other.runtimeType &&
-        userState == other.userState;
+        userState == other.userState &&
+        recordRequestState == other.recordRequestState;
   }
 
   @override
   int get hashCode =>
-    userState.hashCode;
+    userState.hashCode ^
+    recordRequestState.hashCode;
 }

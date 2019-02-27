@@ -55,10 +55,22 @@ class MainSceneState extends State<MainScene>
     return user;
   }
 
+  void _handleTabSelection() {
+    setState(() {
+      final store = StoreProvider.of<AppState>(context);
+      print('dispose and addmode action called');
+      store.dispatch(AddModeAction());
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _tabController = new TabController(length: 4, vsync: this);
+    _tabController = new TabController(
+        length: 4,
+        vsync: this,
+    );
+    _tabController.addListener(_handleTabSelection);
   }
 
   @override
@@ -69,6 +81,7 @@ class MainSceneState extends State<MainScene>
           centerTitle: true,
           bottom: TabBar(
             controller: _tabController,
+
             tabs: <Tab>[
               Tab(icon: Icon(FontAwesomeIcons.search)),
               Tab(icon: Icon(FontAwesomeIcons.dollarSign)),
@@ -84,12 +97,15 @@ class MainSceneState extends State<MainScene>
           ],
         ),
         body: Container(
-          child: TabBarView(controller: _tabController, children: <Widget>[
-            HomeScene(),
-            RequestScene(_handleSignIn),
-            ViewScene(),
-            HelpScene(),
-          ]),
+          child: TabBarView(
+            controller: _tabController,
+            children: <Widget>[
+              HomeScene(),
+              RequestScene(),
+              ViewScene(_tabController),
+              HelpScene(),
+            ],
+          ),
         ));
   }
 }

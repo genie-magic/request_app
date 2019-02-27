@@ -7,32 +7,40 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:validate/validate.dart';
 import 'package:request_app/common/globals.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:uuid/uuid.dart';
+
 class RequestScene extends StatelessWidget {
-  RequestScene(this.callLogin);
-
-  final callLogin;
-
   @override
   Widget build(BuildContext context) {
-    return StoreConnector<AppState, User>(
+    print('************************************request scne build is called************************************');
+    return StoreConnector<AppState, RequestSceneModel>(
       distinct: true,
-      converter: (store) => store.state.userState.user,
-      builder:(_, user) => RequestSceneContent(user, callLogin)
+      converter: (store) {
+        print('+++++++++++++++++++++++bAddOrEdit flag here+++++++++++++++++++++++');
+        print(RequestSceneModel.fromStore(store).bAddOrEdit);
+          return RequestSceneModel.fromStore(store);
+        },
+      builder:(_, requestSceneModel) => RequestSceneContent(requestSceneModel)
     );
   }
 }
 
 class RequestSceneContent extends StatefulWidget {
-  RequestSceneContent(this.signedInUser, this.callLogin);
-  final User signedInUser;
-  final callLogin;
+  RequestSceneContent(this._requestSceneModel)
+      : signedInUser = _requestSceneModel.loginUser;
+  RequestSceneModel _requestSceneModel;
+  User signedInUser;
 
   @override
-  RequestSceneContentState createState() => new RequestSceneContentState();
+  RequestSceneContentState createState() {
+    print('==============================================create state is called==============================================');
+    return RequestSceneContentState();
+  }
 }
 
-class RequestSceneContentState extends State<RequestSceneContent> with SingleTickerProviderStateMixin {
+class RequestSceneContentState extends State<RequestSceneContent> with AutomaticKeepAliveClientMixin<RequestSceneContent> {
   final GlobalKey<FormState> _formKey = new GlobalKey<FormState>();
   final _currenciesList = ["USD", "CAN", "GBP"];
   String _selectedCurrency;
@@ -41,28 +49,67 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
   List<Beneficiary>_beneficiaryList;
   Beneficiary _beneficiary;
 
-  List<String> imageUrls = [
-    'https://firebasestorage.googleapis.com/v0/b/request-app-67d83.appspot.com/o/aladdin_jasmine_genie_96044_1280x720.jpg?alt=media&token=ad37480e-f26c-48fe-abed-d3fb811374ee',
-    'https://firebasestorage.googleapis.com/v0/b/request-app-67d83.appspot.com/o/wp1960528.jpg?alt=media&token=0817cfdd-1a32-4c49-9d29-6c65e343fa03',
-    'https://firebasestorage.googleapis.com/v0/b/request-app-67d83.appspot.com/o/wp1960529.jpg?alt=media&token=07e9b2bd-9bfe-452f-8030-b039a94dafcf',
-    'https://firebasestorage.googleapis.com/v0/b/request-app-67d83.appspot.com/o/zermatt_4k_hd_wallpaper_valais_switzerland_travel_tourism_resort_mountain_snow_clouds_sky_24499-1024x576.jpg?alt=media&token=1b13c53b-e23d-4a75-beee-03cbf0b13842',
-  ];
+  List<String> imageUrls = [];
 
   CollectionReference get records => firestore.collection('records');
-  Record _record = new Record();
+  Record _record;
 
   File _imageFile;
+  bool isUploadingImage= false;
+
+  bool bAddOrEdit; // True : Add, False : Edit
+  String editingRecordId; // In Edit mode only
+
+  @override
+  bool get wantKeepAlive => false;
 
   @override
   void initState() {
-    super.initState();
     _selectedCurrency = _currenciesList[0];
     getBeneficiaries();
+    this._formKey.currentState?.reset();
+
+    // After fetching global status values and reset global status values
+    bAddOrEdit = widget._requestSceneModel.bAddOrEdit;
+
+    // If 'add' mode
+    if (bAddOrEdit == true) {
+      _record = new Record();
+    } else {
+      _record = widget._requestSceneModel.record;
+      editingRecordId = widget._requestSceneModel.editRecordID;
+      imageUrls = _record.photos;
+      _selectedCurrency = _record.currency;
+    }
+
+    super.initState();
   }
 
   ///////////////// Functional functions ////////////////////////
   Future<void> _addRecord() async {
-    await records.add(_record.toJson());
+    firestore.runTransaction((Transaction txt) async {
+      var _result = await records.add(_record.toJson()).then((value) {
+        _showSnackBar('Record added successfully');
+      }).catchError((error) {
+        _showSnackBar(error);
+      });
+    });
+  }
+
+  Future<void> _updateRecord() async {
+    DocumentReference documentReference =
+      firestore.collection('records').document(editingRecordId);
+      firestore.runTransaction((Transaction tx) async {
+        DocumentSnapshot documentSnapshot = await tx.get(documentReference);
+
+        if (documentSnapshot.exists) {
+          await tx.update(documentReference, _record.toJson()).then((value) {
+            _showSnackBar('Record updated successfully');
+          }).catchError((error) {
+            _showSnackBar(error);
+          });
+        }
+    });
   }
 
   Future<List<Beneficiary>> getBeneficiaries() async {
@@ -80,7 +127,15 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
       }).toList();
 
       if (_beneficiaryList.length > 0) {
-        _beneficiary = _beneficiaryList[0];
+        // If 'add' mode
+        if (bAddOrEdit == true) {
+          _beneficiary = _beneficiaryList[0];
+        }
+        // if 'edit' mode
+        else {
+          _beneficiary = _beneficiaryList.firstWhere((element) => element.id == _record.beneficiaryId, orElse: () => _beneficiaryList[0]);
+        }
+
       }
 
       isLoadingBeneficiary = false;
@@ -88,23 +143,39 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
 
     return _beneficiaryList;
   }
+
+  _showSnackBar(String text) {
+    final SnackBar snackBar = SnackBar(content: Text(text));
+    Scaffold.of(context).showSnackBar(snackBar);
+  }
   ///////////////// Event handlers //////////////////////////////
   _onSubmit() {
     if (this._formKey.currentState.validate()) {
+      if (imageUrls.length < 1) {
+        _showSnackBar('At least one image is needed!');
+        return;
+      }
       _formKey.currentState.save();
+
+      _record.link = _record.link ?? '';
 
       // If user signed in add record
       if (widget.signedInUser != null) {
         _record.userId = widget.signedInUser.uuid;
         _record.beneficiaryId = _beneficiary.id;
-        print('amount here');
-        print(_record.amount);
-        print(_record);
-        _addRecord();
+        _record.photos = imageUrls;
+
+        // If 'add' mode
+        if (bAddOrEdit == true) {
+          _addRecord();
+        } else {
+          _updateRecord();
+        }
       }
       // If user not signed in go to login modal
       else {
-        widget?.callLogin();
+        _showSnackBar('You need to login to add record');
+        return;
       }
     }
   }
@@ -125,8 +196,28 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
     }
 
     _imageFile = await ImagePicker.pickImage(source: source);
+    if (_imageFile == null) {
+      return;
+    }
 
-    // Upload to firebase storage
+    /////////// Upload to firebase storage //////////
+    setState(() {
+      isUploadingImage = true;
+    });
+
+    final uuid = Uuid().v1();
+    StorageReference reference = firebaseStorage.ref().child("image-$uuid");
+    //Upload the file to firebase
+    StorageUploadTask uploadTask = reference.putFile(_imageFile);
+
+    // Waits till the file is uploaded then stores the download url
+    StorageTaskSnapshot taskSnapshot = await uploadTask.onComplete;
+
+    String _downloadUrl = await taskSnapshot.ref.getDownloadURL();
+    setState(() {
+      imageUrls.add(_downloadUrl);
+      isUploadingImage = false;
+    });
   }
   //////////////////////////// Widgets.... ////////////////////////////////
   List<Widget> renderImageUrls() {
@@ -197,11 +288,11 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
           margin: EdgeInsets.only(left: 20.0, top: 40.0, right: 20.0),
           child: Form(
             key: _formKey,
-            autovalidate: true,
             child: ListView(
               shrinkWrap: true,
               children: <Widget>[
                 TextFormField(
+                  initialValue: _record.amount != null? _record.amount.toString() : '',
                   decoration: const InputDecoration(
                       hintText: "Requested amount",
                       labelText: "Amount"
@@ -243,6 +334,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
                   },
                 ),
                 TextFormField(
+                  initialValue: _record.title != null? _record.title.toString() : '',
                   decoration: const InputDecoration(
                     hintText: "Please input title here",
                     labelText: "Title"
@@ -261,6 +353,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
                   },
                 ),
                 TextFormField(
+                  initialValue: _record.description != null? _record.description.toString() : '',
                   maxLines: null,
                   keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
@@ -280,6 +373,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
                   },
                 ),
                 TextFormField(
+                  initialValue: _record.city != null? _record.city.toString() : '',
                   keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
                     hintText: "Please input city here",
@@ -298,6 +392,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
                   },
                 ),
                 TextFormField(
+                  initialValue: _record.zip != null? _record.zip.toString() : '',
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     hintText: "Zipcode",
@@ -338,6 +433,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
                   },
                 ),
                 TextFormField(
+                  initialValue: _record.link != null? _record.link.toString() : '',
                   keyboardType: TextInputType.url,
                   decoration: const InputDecoration(
                     hintText: "Link to Website",
@@ -354,21 +450,21 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
                     Padding(
                       padding: EdgeInsets.all(10.0),
                       child: RaisedButton.icon(
-                        onPressed: () {
+                        onPressed: isUploadingImage ? null : () {
                           _onAddImage(ImageSource.gallery);
                         },
                         icon: Icon(Icons.photo_library),
-                        label: Text('Library image'),
+                        label: isUploadingImage ? Text('Hold on...'): Text('Library image'),
                       ),
                     ),
                     Padding(
                       padding: EdgeInsets.all(10.0),
                       child: RaisedButton.icon(
-                        onPressed: () {
+                        onPressed: isUploadingImage ? null : () {
                           _onAddImage(ImageSource.camera);
                         },
                         icon: Icon(Icons.camera_alt),
-                        label: Text('Camera image'),
+                        label: isUploadingImage ? Text('Hold on...') : Text('Camera image'),
                       ),
                     )
                   ],
@@ -389,7 +485,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with SingleTic
           mainAxisSize: MainAxisSize.max,
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: <Widget>[
-            FlatButton.icon(icon: Icon(FontAwesomeIcons.solidSave), onPressed: _onSubmit, label: Text("Submit")),
+            FlatButton.icon(icon: Icon(FontAwesomeIcons.solidSave), onPressed: _onSubmit, label: bAddOrEdit ? Text("Submit") : Text("Update")),
             FlatButton.icon(icon: Icon(FontAwesomeIcons.solidTimesCircle), onPressed: () {}, label: Text("Cancel")),
           ],
         ),

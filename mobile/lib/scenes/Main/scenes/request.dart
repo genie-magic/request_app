@@ -14,33 +14,28 @@ import 'package:uuid/uuid.dart';
 class RequestScene extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    print('************************************request scne build is called************************************');
-    return StoreConnector<AppState, RequestSceneModel>(
-      distinct: true,
-      converter: (store) {
-        print('+++++++++++++++++++++++bAddOrEdit flag here+++++++++++++++++++++++');
-        print(RequestSceneModel.fromStore(store).bAddOrEdit);
-          return RequestSceneModel.fromStore(store);
-        },
-      builder:(_, requestSceneModel) => RequestSceneContent(requestSceneModel)
+    return new StoreConnector<AppState, RequestSceneModel>(
+      distinct: false,
+      converter: (store) => RequestSceneModel.fromStore(store),
+      builder:(_, requestSceneModel) {
+        Key key = new Key(requestSceneModel.hashCode.toString());
+        return RequestSceneContent(key, requestSceneModel);
+      }
     );
   }
 }
 
 class RequestSceneContent extends StatefulWidget {
-  RequestSceneContent(this._requestSceneModel)
-      : signedInUser = _requestSceneModel.loginUser;
+  RequestSceneContent(Key key, this._requestSceneModel)
+      : signedInUser = _requestSceneModel.loginUser, super(key: key);
   RequestSceneModel _requestSceneModel;
   User signedInUser;
 
   @override
-  RequestSceneContentState createState() {
-    print('==============================================create state is called==============================================');
-    return RequestSceneContentState();
-  }
+  RequestSceneContentState createState() => RequestSceneContentState();
 }
 
-class RequestSceneContentState extends State<RequestSceneContent> with AutomaticKeepAliveClientMixin<RequestSceneContent> {
+class RequestSceneContentState extends State<RequestSceneContent> {
   final GlobalKey<FormState> _formKey = new GlobalKey<FormState>();
   final _currenciesList = ["USD", "CAN", "GBP"];
   String _selectedCurrency;
@@ -67,6 +62,7 @@ class RequestSceneContentState extends State<RequestSceneContent> with Automatic
   void initState() {
     _selectedCurrency = _currenciesList[0];
     getBeneficiaries();
+
     this._formKey.currentState?.reset();
 
     // After fetching global status values and reset global status values
@@ -75,14 +71,24 @@ class RequestSceneContentState extends State<RequestSceneContent> with Automatic
     // If 'add' mode
     if (bAddOrEdit == true) {
       _record = new Record();
+      _selectedCurrency = _currenciesList[0];
+      imageUrls = [];
+      editingRecordId = '';
     } else {
-      _record = widget._requestSceneModel.record;
-      editingRecordId = widget._requestSceneModel.editRecordID;
-      imageUrls = _record.photos;
-      _selectedCurrency = _record.currency;
+      setState(() {
+        _record = widget._requestSceneModel.record;
+        editingRecordId = widget._requestSceneModel.editRecordID;
+        imageUrls = _record.photos;
+        _selectedCurrency = _record.currency;
+      });
     }
 
     super.initState();
+  }
+
+
+  reInitialize() {
+
   }
 
   ///////////////// Functional functions ////////////////////////

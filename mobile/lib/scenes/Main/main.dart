@@ -58,7 +58,6 @@ class MainSceneState extends State<MainScene>
   void _handleTabSelection() {
     setState(() {
       final store = StoreProvider.of<AppState>(context);
-      print('dispose and addmode action called');
       store.dispatch(AddModeAction());
     });
   }
